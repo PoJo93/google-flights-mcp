@@ -350,6 +350,69 @@ class SearchFlights:
             options.extend(chunk_options)
         return options
 
+    def build_flight_booking_url(
+        self,
+        flight: FlightResult | tuple[FlightResult, ...],
+        *,
+        currency: str | None = None,
+        language: str | None = None,
+        country: str | None = None,
+    ) -> str:
+        """Build a Google Flights deep-link URL for a specific itinerary.
+
+        Constructs ``https://www.google.com/travel/flights/booking?tfs=…`` that
+        opens the booking page pre-loaded with the given itinerary — the
+        airline/OTA fare options and the "Continue" booking CTA included.
+
+        The ``tfs`` itinerary token is fully deterministic (built from the
+        flight's airports, dates and flight numbers); no session id or network
+        round-trip is required, so the same itinerary always yields the same
+        URL. This method never raises — on malformed input it falls back to the
+        generic Google Flights URL.
+
+        Args:
+            flight: A :class:`~fli.models.FlightResult` (one-way / single
+                segment) or a tuple of them (round-trip / multi-city, one
+                element per travel direction).
+            currency: ISO 4217 currency code appended as ``curr=``.
+            language: BCP-47 language code appended as ``hl=``.
+            country: ISO 3166-1 alpha-2 country code appended as ``gl=``.
+
+        Returns:
+            A ``https://www.google.com/travel/flights/booking?tfs=…`` URL.
+
+        """
+        from fli.search._proto import LegSpec, build_tfs_token
+
+        def _iata(airport: object) -> str:
+            # Handle both Airport enum (has .name) and plain strings.
+            return getattr(airport, "name", str(airport)).lstrip("_")
+
+        results: list[FlightResult] = list(flight) if isinstance(flight, tuple) else [flight]
+        is_one_way = len(results) == 1
+
+        try:
+            segments: list[list[LegSpec]] = []
+            for result in results:
+                seg_legs = [
+                    LegSpec(
+                        origin=_iata(leg.departure_airport),
+                        dep_date=leg.departure_datetime.date().isoformat(),
+                        dest=_iata(leg.arrival_airport),
+                        airline=_iata(leg.airline),
+                        flight_number=leg.flight_number,
+                    )
+                    for leg in result.legs
+                ]
+                segments.append(seg_legs)
+            tfs = build_tfs_token(segments, is_one_way=is_one_way)
+            url = f"https://www.google.com/travel/flights/booking?tfs={tfs}"
+        except Exception:
+            logger.debug("build_flight_booking_url: tfs construction failed", exc_info=True)
+            url = "https://www.google.com/travel/flights"
+
+        return with_locale_params(url, currency, language, country)
+
     def _capture_session_id(self, inner: list) -> None:
         """Cache the shopping session id from ``inner[0][4]`` of a search response.
 

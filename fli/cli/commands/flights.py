@@ -18,6 +18,7 @@ from fli.cli.utils import (
 )
 from fli.core import (
     build_flight_segments,
+    google_flights_url,
     parse_airlines,
     parse_alliances,
     parse_cabin_class,
@@ -128,6 +129,17 @@ def _search_flights_core(
             time_restrictions=time_restrictions,
         )
 
+        # Shareable Google Flights deep link for this search.
+        booking_url = google_flights_url(
+            origin_airport.name.lstrip("_"),
+            destination_airport.name.lstrip("_"),
+            departure_date,
+            return_date,
+            currency=currency,
+            language=language,
+            country=country,
+        )
+
         # Parse layover constraints (airports, min duration, max duration).
         layover_restrictions = None
         layover_airports = [resolve_airport(code) for code in layover] if layover else None
@@ -181,12 +193,21 @@ def _search_flights_core(
                         query=query,
                         results_key="flights",
                         results=[],
+                        booking_url=booking_url,
                     )
                 )
                 return
 
             typer.echo("No flights found.")
             raise typer.Exit(1)
+
+        # Build per-flight booking deep-links (tfs; never raises).
+        booking_urls = [
+            search_client.build_flight_booking_url(
+                result, currency=currency, language=language, country=country
+            )
+            for result in results
+        ]
 
         if output_format == OutputFormat.JSON:
             emit_json(
@@ -196,14 +217,21 @@ def _search_flights_core(
                     query=query,
                     results_key="flights",
                     results=[
-                        serialize_flight_result(result, default_currency=currency)
-                        for result in results
+                        serialize_flight_result(result, default_currency=currency, booking_url=burl)
+                        for result, burl in zip(results, booking_urls, strict=False)
                     ],
+                    booking_url=booking_url,
                 )
             )
             return
 
-        display_flight_results(results, trip_type=trip_type, default_currency=currency)
+        display_flight_results(
+            results,
+            trip_type=trip_type,
+            default_currency=currency,
+            booking_url=booking_url,
+            booking_urls=booking_urls,
+        )
 
     except ParseError as e:
         if output_format == OutputFormat.JSON:

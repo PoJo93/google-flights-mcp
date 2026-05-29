@@ -73,8 +73,9 @@ uv run mkdocs build         # Build static docs
    - All models use Pydantic for validation
 
 5. **MCP Server** (`fli/mcp/`)
-   - FastMCP-based server with two tools: `search_flights` and `search_dates`
+   - FastMCP-based server with four tools: `search_flights`, `search_dates`, `get_booking_options`, `find_airports`
    - Industry-standard parameter naming: `origin`, `destination`, `cabin_class`, `max_stops`
+   - Per-flight booking deep-link URLs (`tfs` protobuf) in every search result
    - Prompt templates for guided searches
    - Configuration via environment variables
 
@@ -120,6 +121,14 @@ Search for flights on a specific date.
 - `currency` / `language` / `country` - Google `curr=` / `hl=` / `gl=` URL params
 - `sort_by` - CHEAPEST, DURATION, DEPARTURE_TIME, ARRIVAL_TIME
 
+**Response:** Each flight in `flights[]` carries its own `booking_url` — a
+`tfs` protobuf deep link that opens the specific itinerary's booking page
+(vendor fares + "Continue" CTA) on Google Flights. The token is deterministic
+(no session id), so the same itinerary always yields the same URL. The
+top-level `booking_url` is a broader search-page link (route + dates
+pre-filled) kept as a reliable fallback. Each flight's `flight_number` can be
+passed to `get_booking_options` for per-vendor pricing.
+
 ### `search_dates`
 Find cheapest travel dates within a range.
 
@@ -132,6 +141,31 @@ Find cheapest travel dates within a range.
 - `exclude_airlines`, `alliance`, `exclude_alliance`, `min_layover`, `max_layover` - Same as `search_flights`
 - `currency`, `language`, `country` - Same locale knobs as `search_flights`
 - `sort_by_price` - Boolean to sort by price
+
+**Response:** Each date result carries a `booking_url` deep-linking to Google
+Flights for that specific date (and return date for round trips).
+
+### `get_booking_options`
+Get bookable fares (vendor names, prices, and direct booking URLs) for a
+single itinerary. Runs a fresh search, selects the flight identified by
+`flight_numbers` (or the top result when omitted), then calls
+`SearchFlights.get_booking_options` and returns the airline-direct and OTA
+options — each with a clickable `booking_url` and `google_click_url`.
+
+**Key Parameters:**
+- `origin` / `destination` / `departure_date` / `return_date` - Same as `search_flights`
+- `flight_numbers` - Ordered flight numbers identifying the itinerary, taken
+  from a prior `search_flights` result (e.g. `['BA178']` one-way,
+  `['AA100', 'AA200']` round-trip). Accepts bare (`'178'`) or airline-prefixed
+  (`'BA178'`) forms. Omit to price the top result.
+- `cabin_class`, `max_stops`, `passengers`, `airlines`, `exclude_basic_economy` - Same as `search_flights`
+- `departure_window`, `sort_by`, `exclude_airlines`, `alliance`, `exclude_alliance`,
+  `min_layover`, `max_layover`, `emissions`, `checked_bags`, `carry_on` - Same as
+  `search_flights`. Pass the **same filters used for `search_flights`** so the
+  re-run search reproduces the same result set; otherwise (especially when
+  `flight_numbers` is omitted) the priced "top result" may differ from what the
+  user saw.
+- `currency`, `language`, `country` - Same locale knobs as `search_flights`
 
 ### Note on emissions
 Both tools accept the `emissions` filter (forwarded to Google's
