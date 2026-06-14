@@ -32,15 +32,19 @@ dependencies = [
     "ratelimit>=2.2.1",
     "tenacity>=9.0.0",
     "typer>=0.15.1",
-]
-
-[project.optional-dependencies]
-mcp = [
+    # MCP server runtime deps. Kept in the core dependency set (rather than an
+    # optional extra) so deployment builds that run a plain `uv sync` — e.g.
+    # FastMCP Cloud — install fastmcp without needing `--extra mcp`.
     "fastapi>=0.115.6",
     "fastmcp>=3.2",
     "pydantic-settings>=2.0.0",
     "uvicorn>=0.34.0",
 ]
+
+[project.optional-dependencies]
+# Retained for backward compatibility: `pip install 'flights[mcp]'` still works,
+# but the MCP deps now live in the core dependency set above.
+mcp = []
 all = [
     "flights[mcp]",
 ]
